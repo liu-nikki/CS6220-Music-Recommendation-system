@@ -61,7 +61,7 @@ result['tracks']['items'][1]['artists']
 """## K-means clustering on songs"""
 
 # Reload data in seperate data frame
-songs_df = pd.read_csv('/content/drive/My Drive/spotify-dataset/data/data.csv')
+songs_df = pd.read_csv('./spotify-dataset/data/data.csv')
 
 selected_features = ['acousticness', 'danceability', 'energy', 'instrumentalness',
                      'liveness', 'loudness', 'speechiness', 'valence', 'tempo',
@@ -183,7 +183,7 @@ def find_song_from_spotify(name, year):
 
     return song_data
 
-def recommend_songs_kmeans_with_api(song_names, songs_df, pca_model, scaler, kmeans_model, n_recommendations=10):
+def recommend_songs_kmeans_with_api(input_songs, songs_df, pca_model, scaler, kmeans_model, n_recommendations=10):
     # Ensure 'cluster' column exists
     if 'cluster' not in songs_df.columns:
         raise KeyError("'cluster' column not found in songs_df. Ensure k-means clustering is performed.")
@@ -192,7 +192,10 @@ def recommend_songs_kmeans_with_api(song_names, songs_df, pca_model, scaler, kme
     input_song_names = []
     new_songs = []  # Store newly added songs for dynamic clustering
 
-    for song_name, year in song_names:
+    for song in input_songs:
+        song_name = song['name']
+        year = song['year']
+        print(song_name, year)
         matched_songs = songs_df[songs_df['name'].str.lower() == song_name.lower()]
         if matched_songs.empty:
             print(f"Song '{song_name}' not found in the dataset. Fetching from Spotify...")
@@ -241,7 +244,12 @@ input_songs = [{'name': 'Come As You Are', 'year':1991},
                 {'name': 'Smells Like Teen Spirit', 'year': 1991},
                 {'name': 'Lithium', 'year': 1992},
                 {'name': 'All Apologies', 'year': 1993},
-                {'name': 'Stay Away', 'year': 1993}]
+                {'name': 'Stay Away', 'year': 1993},
+               {'name': 'Work', 'year':2016},
+                {'name': 'We Found Love', 'year': 2011},
+                {'name': 'Diamonds', 'year': 2012},
+                {'name': 'Umbrella', 'year': 2007},
+                {'name': 'Stay', 'year': 2012}]
 
 recommendations = recommend_songs_kmeans_with_api(
     input_songs,
@@ -255,14 +263,49 @@ recommendations = recommend_songs_kmeans_with_api(
 # Display recommendations
 print(recommendations)
 
-"""## Enhanced K-Means Model with Weighted Genre"""
+def get_average_popularity_with_spotipy(recommendations_df):
+    total_popularity = 0
+    song_count = 0
 
-# Import necessary libraries
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from scipy.spatial.distance import cdist
-from collections import defaultdict
+    for _, row in recommendations_df.iterrows():
+        song_name = row['name']
+        year = row['year']
+
+        # Construct a search query with name and year
+        query = f"track:{song_name} year:{year}"
+
+        try:
+            results = sp.search(q=query, type='track', limit=10)  # Fetch multiple results to filter by year
+            if results and results['tracks']['items']:
+                # Filter results by release year
+                filtered_tracks = [
+                    track for track in results['tracks']['items']
+                    if track['album']['release_date'].startswith(str(year))
+                ]
+                if filtered_tracks:
+                    # Use the first matching track
+                    track = filtered_tracks[0]
+                    # print(song_name, track['popularity'])
+                    total_popularity += track['popularity']
+                    song_count += 1
+                else:
+                    print(f"No exact year match found for '{song_name}' in {year}")
+            else:
+                print(f"No match found for '{song_name}' in {year}")
+        except Exception as e:
+            print(f"Error fetching data for '{song_name}' in {year}: {e}")
+
+    if song_count == 0:
+        return 0  # Avoid division by zero
+
+    # Calculate the average popularity
+    return total_popularity / song_count
+
+# Get average popularity
+average_popularity = get_average_popularity_with_spotipy(recommendations)
+print(f"Average Popularity: {average_popularity}")
+
+"""## Enhanced K-Means Model with Weighted Genre"""
 
 # Define feature columns
 number_cols = ['acousticness', 'danceability', 'energy', 'instrumentalness',
@@ -302,8 +345,6 @@ songs_with_genre_df = classify_songs_by_genre(songs_data, genre_data, number_col
 
 songs_with_genre_df.head()
 
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-
 # Encode the 'classified_genre' column into numeric values
 label_encoder = LabelEncoder()
 songs_with_genre_df['classified_genre_encoded'] = label_encoder.fit_transform(songs_with_genre_df['classified_genre'])
@@ -330,20 +371,25 @@ print(f"Explained variance ratio: {pca_genre.explained_variance_ratio_}")
 
 # apply k-means clustering
 optimal_k = 8
-kmeans = KMeans(n_clusters=optimal_k, random_state=42)
-kmeans.fit(pca_features_with_genre)
+enhanced_kmeans = KMeans(n_clusters=optimal_k, random_state=42)
+enhanced_kmeans.fit(pca_features_with_genre)
 
 # Assign clusters to the original DataFrame
-songs_with_genre_df['cluster'] = kmeans.labels_
+songs_with_genre_df['cluster'] = enhanced_kmeans.labels_
 
 # Test input
 input_songs = [{'name': 'Come As You Are', 'year':1991},
                 {'name': 'Smells Like Teen Spirit', 'year': 1991},
                 {'name': 'Lithium', 'year': 1992},
                 {'name': 'All Apologies', 'year': 1993},
-                {'name': 'Stay Away', 'year': 1993}]
+                {'name': 'Stay Away', 'year': 1993},
+               {'name': 'Work', 'year':2016},
+                {'name': 'We Found Love', 'year': 2011},
+                {'name': 'Diamonds', 'year': 2012},
+                {'name': 'Umbrella', 'year': 2007},
+                {'name': 'Stay', 'year': 2012}]
 
-recommendations = recommend_songs_kmeans_with_api(
+enhanced_recommendations = recommend_songs_kmeans_with_api(
     input_songs,
     songs_with_genre_df,
     pca_model=pca_genre,
@@ -353,140 +399,9 @@ recommendations = recommend_songs_kmeans_with_api(
 )
 
 # Display recommendations
-print(recommendations)
+print(enhanced_recommendations)
 
-"""## Weighted Vector Model with Cosine Similarity - Not yet complete"""
-
-def add_genre_vector(songs_df):
-    """
-    Add one-hot encoded genre vectors to the songs dataset.
-    """
-    # One-hot encode the genres
-    genre_encoder = OneHotEncoder(sparse_output=False)
-    genre_encoded = genre_encoder.fit_transform(songs_df[['classified_genre']])
-    songs_df['genre_vector'] = list(genre_encoded)
-    return songs_df, genre_encoder
-
-# Add genre vectors
-songs_df, genre_encoder = add_genre_vector(songs_df)
-
-# Define feature weights
-feature_weights = {
-    'valence': 1.0,
-    'year': 0.5,
-    'acousticness': 1.0,
-    'danceability': 1.5,
-    'duration_ms': 0.5,
-    'energy': 2.0,
-    'explicit': 0.1,
-    'instrumentalness': 1.0,
-    'key': 0.2,
-    'liveness': 1.0,
-    'loudness': 1.5,
-    'mode': 0.5,
-    'popularity': 1.0,
-    'speechiness': 1.0,
-    'tempo': 1.5,
-    'genre': 1.0  # Weight for genre vector
-}
-
-def get_song_vector_with_weights(song, spotify_data, feature_weights):
-    """
-    Retrieve the combined song vector (features + genre) with applied weights.
-    If the song is not found in the dataset, fetch it from Spotify API.
-    """
-    try:
-        # Try to retrieve the song from the dataset
-        song_data = spotify_data[(spotify_data['name'].str.lower() == song['name'].lower()) &
-                                 (spotify_data['year'] == song['year'])].iloc[0]
-    except IndexError:
-        # Song not found in dataset, fetch from Spotify API
-        print(f"Fetching '{song['name']}' from Spotify API...")
-        song_data = find_song_from_spotify(song['name'], song['year'])
-        if song_data is None:
-            print(f"Could not find '{song['name']}' on Spotify.")
-            return None
-
-    # Combine numerical features and genre vector
-    feature_vector = song_data[number_cols].values if isinstance(song_data, pd.Series) else song_data[number_cols].to_numpy()
-    genre_vector = np.zeros(len(spotify_data['genre_vector'].iloc[0]))  # Default no genre vector if fetched from API
-    if 'genre_vector' in song_data and isinstance(song_data['genre_vector'], np.ndarray):
-        genre_vector = np.array(song_data['genre_vector'])
-
-    combined_vector = np.concatenate([feature_vector, genre_vector])
-
-    # Apply weights to the vector
-    weighted_features = np.array([feature_vector[i] * feature_weights[col] for i, col in enumerate(number_cols)])
-    weighted_genre = genre_vector * feature_weights['genre']
-    return np.concatenate([weighted_features, weighted_genre])
-
-def get_weighted_average_vector(song_list, spotify_data, feature_weights):
-    """
-    Compute a weighted average vector for the input songs, including genre influence.
-    """
-    vectors = []
-    weights = []
-
-    for song in song_list:
-        try:
-            # Try to retrieve the combined song vector
-            song_vector = get_song_vector_with_weights(song, spotify_data, feature_weights)
-            if song_vector is not None:
-                vectors.append(song_vector)
-                weights.append(1.0)  # Adjust weights dynamically if needed
-        except Exception as e:
-            print(f"Warning: Could not process '{song['name']}' due to {e}. Skipping...")
-            continue
-
-    if len(vectors) == 0:
-        raise ValueError("No valid song vectors found.")
-
-    vectors = np.vstack(vectors)
-    weights = np.array(weights).reshape(-1, 1)
-    return np.average(vectors, axis=0, weights=weights.flatten())
-
-def recommend_songs_with_genre(song_list, spotify_data, n_songs=10):
-    """
-    Recommend songs based on weighted vectors and genre influence.
-    """
-    metadata_cols = ['name', 'year', 'artists', 'classified_genre']
-
-    # Step 1: Compute the weighted average vector for the input songs
-    song_center = get_weighted_average_vector(song_list, spotify_data, feature_weights)
-
-    # Step 2: Scale only the numerical features
-    scaler = StandardScaler()
-    scaled_data = scaler.fit_transform(spotify_data[number_cols])  # Scale numerical features
-    scaled_song_center = scaler.transform([song_center[:len(number_cols)]])  # Scale only the numerical part of the input vector
-
-    # Step 3: Combine scaled numerical features with genre vectors
-    genre_vectors = np.array(list(spotify_data['genre_vector']))
-    combined_data = np.hstack([scaled_data, genre_vectors])  # Combine scaled numerical and genre vectors
-    combined_song_center = np.hstack([scaled_song_center[0], song_center[len(number_cols):]])  # Combine input features
-
-    # Step 4: Compute distances and find nearest songs
-    distances = cdist([combined_song_center], combined_data, 'cosine')
-    index = list(np.argsort(distances)[:, :n_songs][0])
-
-    # Exclude input songs from recommendations
-    rec_songs = spotify_data.iloc[index]
-    rec_songs = rec_songs[~rec_songs['name'].isin([song['name'] for song in song_list])]
-    return rec_songs[metadata_cols].to_dict(orient='records')
-
-# Test input songs
-input_songs = [{'name': 'Come As You Are', 'year':1991},
-                {'name': 'Smells Like Teen Spirit', 'year': 1991},
-                {'name': 'Lithium', 'year': 1992},
-                {'name': 'All Apologies', 'year': 1993},
-                {'name': 'Stay Away', 'year': 1993}
-               ]
-
-# Get recommendations
-recommendations = recommend_songs_with_genre(input_songs, songs_df, n_songs=10)
-
-# Convert recommendations to a DataFrame
-recommendations_df = pd.DataFrame(recommendations)
-
-# Display the DataFrame
-print(recommendations_df)
+# Get average popularity
+enhanced_average_popularity = get_average_popularity_with_spotipy(enhanced_recommendations)
+print(f"Average Popularity: {enhanced_average_popularity}")
 
