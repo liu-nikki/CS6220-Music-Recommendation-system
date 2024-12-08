@@ -8,43 +8,112 @@ Original file is located at
 
 # **Final Project: Spotify Music Recommendation System**
 
-### Team Members:
-### placeholder
+### Team Members: Xiaoshu Liu, Xinyue Han, Hao Li, Siying Lu
 
 ### Package Installation
 """
 
+from collections import defaultdict
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 import spotipy
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.pipeline import Pipeline
-from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
-from sklearn.metrics import euclidean_distances
+from sklearn.preprocessing import MinMaxScaler
 from scipy.spatial.distance import cdist
 from spotipy.oauth2 import SpotifyClientCredentials
+
 
 """### Data Import"""
 
 data = pd.read_csv("./spotify-dataset/data/data.csv")
 songs_data = pd.read_csv('./spotify-dataset/data/data.csv')
 genre_data = pd.read_csv('./spotify-dataset/data/data_by_genres.csv')
+year_data = pd.read_csv('./spotify-dataset/data/data_by_year.csv')
 print(data.shape)
 print(data.head(5))
+print(songs_data.info())
+print(genre_data.info())
+print(year_data.head(5))
+print(year_data.info())
 
+"""### EDA"""
+
+# visualize into decade
+def get_decade(year):
+    period_start = int(year/10) * 10
+    decade = '{}s'.format(period_start)
+    return decade
+
+songs_data['decade'] = songs_data['year'].apply(get_decade)
+
+plt.figure(figsize=(12,6))
+sns.countplot(x='decade', data=songs_data)
+plt.title('Number of songs each decade')
+plt.show()
+
+"""for this dataset, most of the songs are in 1950s to 2010s"""
+
+# add a column of dacade to the dataset
+
+year_data['decade'] = ((year_data['year'] - 1)//10)*10
+song_features = ['acousticness', 'danceability', 'energy', 'instrumentalness', 'liveness', 'loudness', 'speechiness', 'tempo', 'valence', 'key']
+scaler = MinMaxScaler()
+year_data[song_features] = scaler.fit_transform(year_data[song_features])
+
+# song features over time
+plt.figure(figsize=(10, 6))
+for feature in song_features:
+    sns.lineplot(x='decade', y=feature, data=year_data, label=feature, errorbar=None)
+plt.ylabel('Value')
+plt.ylim(0, 1)
+plt.title('Song features trends over time')
+# set legend outside the plot
+plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+
+# Calculate correlation matrix for songs_data, selecting only numerical
+correlation_matrix = songs_data.select_dtypes(include=np.number).corr()
+
+# Correlation heatmap
+plt.figure(figsize=(12, 8))
+sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm", cbar=True)
+plt.title("Feature Correlation Heatmap (Songs Data)")
+plt.show()
+
+# Calculate correlations and exclude the label column itself
+label_column = 'popularity'
+feature_correlations = songs_data.select_dtypes(include=np.number).corr()[label_column]
+
+feature_correlations = feature_correlations.drop(label_column).sort_values(ascending=False)
+
+
+# Barplot for feature correlation with label
+plt.figure(figsize=(10, 6))
+sns.barplot(x=feature_correlations.values, y=feature_correlations.index, palette="viridis")
+plt.title(f"Feature Correlation with {label_column}")
+plt.xlabel("Correlation")
+plt.ylabel("Features")
+plt.show()
+
+"""### Cluster Songs from spotify-dataset"""
+
+# pipeline to standardize numerical features and cluster the dataset into 20 groups using K-Means
+# assign a cluster label for each song
 song_cluster_pipeline = Pipeline([('scaler', StandardScaler()),
                                   ('kmeans', KMeans(n_clusters=20,
                                    verbose=False))
                                  ], verbose=False)
-
 X = data.select_dtypes(np.number)
 number_cols = list(X.columns)
 song_cluster_pipeline.fit(X)
 song_cluster_labels = song_cluster_pipeline.predict(X)
 data['cluster_label'] = song_cluster_labels
+
+data.head(20)
 
 """### Connect to Spotify API"""
 
@@ -54,11 +123,12 @@ client_credentials_manager = SpotifyClientCredentials(client_id=client_id, clien
 sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
 # API testing
+# search for tracks associated with a list of artist names
 name = ["Michael Jackson","pitbull","Christina","Elvis Presley"]
 result = sp.search(name)
 result['tracks']['items'][1]['artists']
 
-"""## K-means clustering on songs"""
+"""### K-means clustering on songs"""
 
 # Reload data in seperate data frame
 songs_df = pd.read_csv('./spotify-dataset/data/data.csv')
@@ -100,17 +170,6 @@ plt.title('Explained Variance vs Number of Components')
 plt.legend(loc='lower right')
 plt.grid(True)
 plt.show()
-
-# plt.figure(figsize=(10, 7))
-# plt.plot(cumulative_variance, color='k', lw=2)
-# plt.xlabel('Number of components')
-# plt.ylabel('Total explained variance')
-# plt.xlim(0, len(selected_features))
-# plt.yticks(np.arange(0, 1.1, 0.1))
-# plt.axvline(pca.n_components_, c='b', label=f'{pca.n_components_} components')
-# plt.axhline(0.95, c='r', label='95% variance')
-# plt.legend()
-# plt.show()
 
 # Principal Component Loadings - detailed weighted features for each PC
 loadings = pd.DataFrame(
@@ -158,8 +217,27 @@ kmeans.fit(pca_features)
 # Assign clusters to the original DataFrame
 songs_df['cluster'] = kmeans.labels_
 
+# prompt: plot the cluster
+
+import matplotlib.pyplot as plt
+
+# Assuming 'songs_df' and 'pca_features' are defined from the previous code
+# and 'songs_df' now contains the 'cluster' column
+
+# Plot the clusters using the first two principal components
+plt.figure(figsize=(10, 8))
+for cluster_label in range(optimal_k):  # optimal_k should be defined earlier
+    cluster_data = pca_features[songs_df['cluster'] == cluster_label]
+    plt.scatter(cluster_data[:, 0], cluster_data[:, 1], label=f'Cluster {cluster_label}')
+
+plt.xlabel('Principal Component 1')
+plt.ylabel('Principal Component 2')
+plt.title('Clusters Visualization using PCA')
+plt.legend()
+plt.show()
+
 # Function to retrieve song data from Spotify API
-def find_song_from_spotify(name, year):
+def find_song_from_spotify_OG(name, year):
     song_data = defaultdict()
     results = sp.search(q=f'track:{name} year:{year}', limit=1)
     if results['tracks']['items'] == []:
@@ -183,6 +261,47 @@ def find_song_from_spotify(name, year):
 
     return song_data
 
+def find_song_from_spotify(name, year):
+    from collections import defaultdict
+
+    song_data = {}
+    try:
+        # Search for the track using Spotipy
+        results = sp.search(q=f'track:{name} year:{year}', type='track', limit=1)
+
+        if not results['tracks']['items']:
+            print(f"No results found for '{name}' ({year}).")
+            return None
+
+        # Extract track information
+        track = results['tracks']['items'][0]
+        track_id = track['id']
+        audio_features = sp.audio_features(track_id)
+
+        if not audio_features or audio_features[0] is None:
+            print(f"Audio features not available for '{name}' ({year}).")
+            return None
+
+        audio_features = audio_features[0]
+
+        # Basic metadata
+        song_data['name'] = track['name']
+        song_data['artists'] = ', '.join([artist['name'] for artist in track['artists']])
+        song_data['year'] = year
+        song_data['duration_ms'] = track['duration_ms']
+        song_data['explicit'] = int(track['explicit'])
+
+        # Audio features
+        for key in selected_features:
+            if key in audio_features:
+                song_data[key] = audio_features[key]
+
+    except Exception as e:
+        print(f"Error retrieving song data for '{name}' ({year}): {e}")
+        return None
+
+    return song_data
+
 def recommend_songs_kmeans_with_api(input_songs, songs_df, pca_model, scaler, kmeans_model, n_recommendations=10):
     # Ensure 'cluster' column exists
     if 'cluster' not in songs_df.columns:
@@ -192,10 +311,11 @@ def recommend_songs_kmeans_with_api(input_songs, songs_df, pca_model, scaler, km
     input_song_names = []
     new_songs = []  # Store newly added songs for dynamic clustering
 
+    # for each song, find matching records from the dataset
     for song in input_songs:
         song_name = song['name']
         year = song['year']
-        print(song_name, year)
+        # print(song_name, year)
         matched_songs = songs_df[songs_df['name'].str.lower() == song_name.lower()]
         if matched_songs.empty:
             print(f"Song '{song_name}' not found in the dataset. Fetching from Spotify...")
@@ -240,16 +360,12 @@ def recommend_songs_kmeans_with_api(input_songs, songs_df, pca_model, scaler, km
     return recommended_songs[['name', 'year', 'artists', 'cluster']]
 
 # Test input
-input_songs = [{'name': 'Come As You Are', 'year':1991},
-                {'name': 'Smells Like Teen Spirit', 'year': 1991},
-                {'name': 'Lithium', 'year': 1992},
-                {'name': 'All Apologies', 'year': 1993},
-                {'name': 'Stay Away', 'year': 1993},
-               {'name': 'Work', 'year':2016},
-                {'name': 'We Found Love', 'year': 2011},
-                {'name': 'Diamonds', 'year': 2012},
-                {'name': 'Umbrella', 'year': 2007},
-                {'name': 'Stay', 'year': 2012}]
+input_songs = [
+                {'name': 'Cruel Summer', 'year':2019},
+                {'name': 'very nice', 'year': 2016},
+                {'name': 'lemon', 'year': 2020},
+                {'name': 'love story', 'year': 2008},
+                ]
 
 recommendations = recommend_songs_kmeans_with_api(
     input_songs,
@@ -263,6 +379,9 @@ recommendations = recommend_songs_kmeans_with_api(
 # Display recommendations
 print(recommendations)
 
+"""### Evaluate popularity"""
+
+# calculates the average popularity of songs using Spotify's Web API.
 def get_average_popularity_with_spotipy(recommendations_df):
     total_popularity = 0
     song_count = 0
@@ -306,6 +425,13 @@ average_popularity = get_average_popularity_with_spotipy(recommendations)
 print(f"Average Popularity: {average_popularity}")
 
 """## Enhanced K-Means Model with Weighted Genre"""
+
+# Import necessary libraries
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from scipy.spatial.distance import cdist
+from collections import defaultdict
 
 # Define feature columns
 number_cols = ['acousticness', 'danceability', 'energy', 'instrumentalness',
@@ -371,23 +497,19 @@ print(f"Explained variance ratio: {pca_genre.explained_variance_ratio_}")
 
 # apply k-means clustering
 optimal_k = 8
-enhanced_kmeans = KMeans(n_clusters=optimal_k, random_state=42)
-enhanced_kmeans.fit(pca_features_with_genre)
+kmeans = KMeans(n_clusters=optimal_k, random_state=42)
+kmeans.fit(pca_features_with_genre)
 
 # Assign clusters to the original DataFrame
-songs_with_genre_df['cluster'] = enhanced_kmeans.labels_
+songs_with_genre_df['cluster'] = kmeans.labels_
 
 # Test input
-input_songs = [{'name': 'Come As You Are', 'year':1991},
-                {'name': 'Smells Like Teen Spirit', 'year': 1991},
-                {'name': 'Lithium', 'year': 1992},
-                {'name': 'All Apologies', 'year': 1993},
-                {'name': 'Stay Away', 'year': 1993},
-               {'name': 'Work', 'year':2016},
-                {'name': 'We Found Love', 'year': 2011},
-                {'name': 'Diamonds', 'year': 2012},
-                {'name': 'Umbrella', 'year': 2007},
-                {'name': 'Stay', 'year': 2012}]
+input_songs = [
+                {'name': 'Cruel Summer', 'year':2019},
+                {'name': 'very nice', 'year': 2016},
+                {'name': 'lemon', 'year': 2020},
+                {'name': 'love story', 'year': 2008},
+                ]
 
 enhanced_recommendations = recommend_songs_kmeans_with_api(
     input_songs,
@@ -401,7 +523,5 @@ enhanced_recommendations = recommend_songs_kmeans_with_api(
 # Display recommendations
 print(enhanced_recommendations)
 
-# Get average popularity
 enhanced_average_popularity = get_average_popularity_with_spotipy(enhanced_recommendations)
 print(f"Average Popularity: {enhanced_average_popularity}")
-
