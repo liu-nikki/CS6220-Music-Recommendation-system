@@ -217,10 +217,6 @@ kmeans.fit(pca_features)
 # Assign clusters to the original DataFrame
 songs_df['cluster'] = kmeans.labels_
 
-# prompt: plot the cluster
-
-import matplotlib.pyplot as plt
-
 # Assuming 'songs_df' and 'pca_features' are defined from the previous code
 # and 'songs_df' now contains the 'cluster' column
 
@@ -425,14 +421,6 @@ average_popularity = get_average_popularity_with_spotipy(recommendations)
 print(f"Average Popularity: {average_popularity}")
 
 """## Enhanced K-Means Model with Weighted Genre"""
-
-# Import necessary libraries
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from scipy.spatial.distance import cdist
-from collections import defaultdict
-
 # Define feature columns
 number_cols = ['acousticness', 'danceability', 'energy', 'instrumentalness',
                'liveness', 'loudness', 'speechiness', 'valence', 'tempo',
