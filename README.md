@@ -85,8 +85,6 @@ This project implements a **Spotify Music Recommendation System** that leverages
 4. **`requirements.txt`**
    - Lists all the dependencies required for the project. Libraries include `pandas`, `numpy`, `scikit-learn`, and `streamlit` for application and data processing purposes.
 
-5. **`README.md`**
-   - This file provides detailed instructions on how to set up, configure, and run the Spotify Music Recommendation System.
 
 ---
 
